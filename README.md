@@ -1,7 +1,5 @@
-# VBFlasher
-A set of tools to edit and flash both factory and custom made VBF files using a SocketCAN compatible interface.
-
-Developed as a part of an Open Source Focus RS tuning stack but should be useful with many other models as well.
+# 0x27 requestSecurityAcesss
+A tool forked from daftracing/vbflasher to unlock ecu's using a SocketCAN compatible interface.
 
 ## Install
 ```
