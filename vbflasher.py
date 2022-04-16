@@ -39,27 +39,9 @@ def tccheck(can_interface):
 
 
 class Vbflasher:
-	def __init__(self, can_interface="can0", sbl_path=None, exe_path=None, data_path=None):
+	def __init__(self, can_interface="can0", self.ecuid="none"):
 		self.ecuid = None
-		self.has_sbl = False
-		self.sbl = None
-		self.exe = None
-		self.data = None
-
-		if sbl_path:
-			self.sbl = Vbf(sbl_path)
-			self.ecuid = self.sbl.ecuid
-			self.has_sbl = True
-
-		if exe_path:
-			if not self.has_sbl:
-				die("[!] No SBL loaded! Please add --sbl or --force")
-			self.exe = Vbf(exe_path)
-			if self.ecuid != self.exe.ecuid:
-				die("[!] Loaded VBF file for a different ECU than before. Aborting.")
-
-		if data_path:
-			self.data = Vbf(data_path)
+	
 
 			if self.ecuid:
 				if self.ecuid != self.data.ecuid:
@@ -82,49 +64,6 @@ class Vbflasher:
 		else:
 			die("\n[-] 0x{:x} did not send positive reposnse to our tester message... Aborting".format(self.ecuid))
 
-
-	def ver(self):
-		self.ecu.UDSDiagnosticSessionControl(0x01)
-		sleep(2)
-
-		tmp = self.ecu.getHWPartNo()
-		debug("\n[?] HWPartNo: {}".format(tmp))
-
-		tmp = self.ecu.getPartNo()
-		debug("[?] PartNo: {}".format(tmp))
-
-		debug("[?] Current software: ", end="")
-		sw = self.ecu.getStrategy()
-		if sw:
-			debug(sw)
-		else:
-			die("\n[-] Unable to get the current strategy id. Aborting")
-
-
-	def verEx(self):
-		self.ecu.UDSDiagnosticSessionControl(0x01)
-		sleep(2)
-
-		tmp = self.ecu.getHWPartNo()
-		debug("\n[?] HWPartNo: {}".format(tmp))
-
-		tmp = self.ecu.getPartNo()
-		debug("[?] PartNo: {}".format(tmp))
-
-		debug("[?] Checking current strategy... ", end="")
-		sw = self.ecu.getStrategy()
-		if sw:
-			debug(sw)
-		else:
-			die("\n[-] Unable to get the current strategy id. Aborting")
-
-		tmp = self.ecu.UDSReadDataByIdentifier([0xf1, 0x24]).decode('UTF-8')
-		debug("[?] Current calibration: {}".format(tmp))
-
-		tmp = self.ecu.getCVN()
-		debug("[?] CVN: {}\n".format(tmp))
-
-
 	def start(self):
 		debug("\n[+] Starting Diagnostic Session 0x02... ", end="")
 		if self.ecu.UDSDiagnosticSessionControl(0x02): # 0x02
@@ -140,97 +79,14 @@ class Vbflasher:
 		else:
 			die(msg)
 
-
-	def upload(self, vbf):
-		spinner = ['/','-', '\\', '|']
-		fmt = int(vbf.header.get('data_format_identifier', '0x00'), 16)
-
-		for ds in vbf.data:
-			debug("\n[ ] Requesting download of 0x{:08x} bytes to 0x{:08x}".format(ds['size'], ds['addr']))
-			chunk = self.ecu.UDSRequestDownload(addr=ds['addr'], size=ds['size'], fmt=fmt)
-			if not chunk:
-				die("[-] Download request failed. Aborting.")
-			chunk = int(chunk.hex(), 16) - 2
-
-			num = ceil(ds['size']/chunk)
-			for i in range(1, num+1):
-
-				d = ds['data'][(i-1)*chunk : i*chunk]
-				debug("\r\t[{}] Sending 0x{:04x} bytes block #{:2d}/{}... ".format(spinner[i%4],len(d), i, num), end="")
-				if self.ecu.UDSTransferData(i%256, d):
-					pass
-				else:
-					die("\n[-] Failed. Aborting.")
-			print('OK\r\t[+')
-
-			if self.ecu.UDSRequestTransferExit():
-				debug("[+] Transfer done.")
-			else:
-				die("[-] Transfer failed. Aborting.")
-
-
-	def erase(self, vbf):
-		if not vbf.header.get('erase'):
-			return
-
-		if type(vbf.header.get('erase')[0]) != list:
-			vbf.header['erase'] = [vbf.header['erase']]
-
-		debug("\n[+] Erasing memory:")
-		for ds in vbf.header.get('erase'):
-			addr = int(ds[0], 16)
-			size = int(ds[1], 16)
-
-			debug("\t0x{:08x}: 0x{:x} bytes... ".format(addr, size), end="")
-			if self.ecu.erase(addr, size):
-				debug("OK")
-			else:
-				die("[!] Unable to wipe memroy. Rather be safe than sorry. Bye...")
-
-
 	def testerloop(self):
 		while  True:
 			self.ecu.UDSTesterPresent();
 			sleep(1)
 
 
-	def flash_sbl(self):
-		self.upload(self.sbl)
-		debug("\n[+] Calling SBL at {}... ".format(self.sbl.header['call']), end="")
-		if self.ecu.SBLcall(int(self.sbl.header['call'], 16)):
-			debug("OK")
-		else:
-			die("[-] Executing SBL failed. Aborting.")
-
-
-	def flash_exe(self):
-		self.erase(self.exe)
-		self.upload(self.exe)
-		self.ecu.commit()
-
-
-	def flash_data(self):
-		self.erase(self.data)
-		self.upload(self.data)
-		self.ecu.commit()
-
-
-	def flash(self):
-		if self.sbl:
-			debug("\n[*] Loading SBL...")
-			self.flash_sbl()
-
-		if self.exe:
-			debug("\n[*] Flashing EXE...")
-			self.flash_exe()
-
-		if self.data:
-			debug("\n[*] Flashing DATA...")
-			self.flash_data()
-
-
 def usage(str):
-	print('usage: {} interface sbl_file.vbf strategy_file.vbf calibration_file.vbf'.format(str))
+	print('usage: {} interface ecuid'.format(str))
 
 
 def debug(str, end="\n"):
@@ -244,17 +100,15 @@ def die(str):
 
 
 if __name__ == '__main__':
-	if len(sys.argv) < 5:
+	if len(sys.argv) < 2:
 		usage(sys.argv[0])
 		sys.exit(-1)
 
 	iface = sys.argv[1]
-	sbl_path = sys.argv[2]
-	exe_path = sys.argv[3]
-	data_path = sys.argv[4]
+	ecuid = sys.argv[2]
 
 	try:
-		flasher = Vbflasher(can_interface=iface, sbl_path=sbl_path, exe_path=exe_path, data_path=data_path)
+		flasher = Vbflasher(can_interface=iface, ecuid=ecuid)
 	except OSError as e:
 		enum = e.args[0]
 		if enum == 19:
@@ -266,6 +120,4 @@ if __name__ == '__main__':
 	debug("\n[+] Successfully opened {}".format(iface))
 
 	flasher.start()
-	flasher.flash()
-	sleep(3)
-	flasher.verEx()
+	
